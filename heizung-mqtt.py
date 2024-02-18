@@ -1,10 +1,11 @@
+#!/usr/bin/env -S python3 -u
 import can
 import ctypes
 import sys
 import json
 from influxdb import InfluxDBClient
 
-INFLUXDB_ADDRESS = '192.168.178.24'
+INFLUXDB_ADDRESS = '2003:a:606:6400:2a0:98ff:fe0a:eff2'
 INFLUXDB_USER = 'root'
 INFLUXDB_PASSWORD = 'root'
 INFLUXDB_DATABASE = 'heizung'
@@ -22,7 +23,7 @@ bus = can.Bus(interface='socketcan',channel='can0',bitrate=10000)
 from paho.mqtt import client as mqtt_client
 
 
-broker = '192.168.178.70'
+broker = '2003:a:606:6400:2a0:98ff:fe0a:eff2'
 port = 1883
 topic = "test"
 # generate client ID with pub prefix randomly
@@ -69,6 +70,7 @@ def publish2(client, topic, msg, retain=False):
         print(f"Send `{msg}` to topic `{topic}`")
     else:
         print(f"Failed to send message to topic {topic}")
+        client.reconnect()
 
 
 client = connect_mqtt()
@@ -76,28 +78,64 @@ client = connect_mqtt()
 
 convert = {
     0x207: {
+        'component': 'sensor',
         "name": "Aussentemperatur",
+        "topic": "temperature",
         "convert": lambda d: ctypes.c_int16((d[0] << 8) + d[1]).value/100.0,
         "device_class": "temperature",
+        'state_class': "measurement",
         "unit_of_measurement": "°C",
         "icon": "mdi:thermometer",
 		"unique_id": "neandere7458057xl",
     },
    0x205: {
+        'component': 'sensor',
         "name": "WT_ist",
+        "topic": "temperature",
         "convert": lambda d: d[0]*0.5,
         "device_class": "temperature",
+        'state_class': "measurement",
         "unit_of_measurement": "°C",
-        "icon": "mdi:coolant-temperature",
+        "icon": "mdi:water-boiler",
 		"unique_id": "arhfthfgewe333ht",
    },
    0x201 : {
+        'component': 'sensor',
         'name': 'vorlauf',
+        "topic": "temperature",
         'convert': lambda d: d[0]*0.5,
         "device_class": "temperature",
+        'state_class': "measurement",
         "unit_of_measurement": "°C",
         "icon": "mdi:coolant-temperature",
 		"unique_id": "arhfthfgewe3365433ht",
+   },
+    0x209 : {
+        'component': 'binary_sensor',
+        'name': 'flamme',
+        "topic": "state",
+        'convert': lambda d: 'ON' if d[0] else 'OFF',
+        "unit_of_measurement": "",
+        "icon": "mdi:fire",
+		"unique_id": "fjdsajfdhsflkjs",
+   },
+   0x206 : {
+        'component': 'binary_sensor',
+        'name': 'stoerung',
+        "topic": "state",
+        'convert': lambda d: 'ON' if d[0] else 'OFF',
+        "unit_of_measurement": "",
+        "icon": "mdi:fire-alert",
+		"unique_id": "fjdsajfdhfjdslh",
+   },
+   0x20b : {
+        'component': 'binary_sensor',
+        'name': 'speicherladung',
+        "topic": "state",
+        'convert': lambda d: 'ON' if d[0] else 'OFF',
+        "unit_of_measurement": "",
+        "icon": "mdi:water-boiler",
+		"unique_id": "fjdsajfdhfjdslhjfkdsö",
    },
 }
 
@@ -105,8 +143,7 @@ state_topic = {}
 
 for key,value in convert.items():
     state_topic[key] = {"name": value["name"],
-                        "state_topic": "heizung/sensor/" + value["name"] + "/temperature",
-                        "device_class": value["device_class"],
+                        "state_topic": "heizung/" + value["component"] + "/" + value["name"] + "/" + value["topic"],
                         "unit_of_measurement": value["unit_of_measurement"],
                         #"value_template": value["value_template"],
                         "icon": value["icon"],
@@ -116,7 +153,11 @@ for key,value in convert.items():
                                    "model": "PI",
                                    "manufacturer": "Junkers feat Bemistec Unlimited Enterprises"}
                         }
-    publish2(client, f"homeassistant/sensor/{value['name']}/config", json.dumps(state_topic[key], ensure_ascii=False), retain=True)
+    if 'device_class' in value.keys():
+        state_topic[key]['device_class'] = value["device_class"]
+    if 'state_class' in value.keys():
+        state_topic[key]['state_class'] = value["state_class"]
+    publish2(client, f"homeassistant/{value['component']}/{value['name']}/config", json.dumps(state_topic[key], ensure_ascii=False), retain=True)
 
 #print (state_topic)
 
